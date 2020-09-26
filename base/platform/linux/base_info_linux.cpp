@@ -7,7 +7,6 @@
 #include "base/platform/linux/base_info_linux.h"
 
 #include <QtCore/QJsonObject>
-#include <QtCore/QLocale>
 #include <QtCore/QFile>
 #include <QtCore/QProcess>
 #include <QtCore/QVersionNumber>
@@ -54,42 +53,6 @@ void FallbackFontConfig(
 }
 
 } // namespace
-
-QString DeviceModelPretty() {
-	const auto cpuArch = QSysInfo::buildCpuArchitecture();
-
-	if (cpuArch == qstr("x86_64")) {
-		return "PC 64bit";
-	} else if (cpuArch == qstr("i386")) {
-		return "PC 32bit";
-	}
-
-	return "PC " + cpuArch;
-}
-
-QString SystemVersionPretty() {
-	const auto result = getenv("XDG_CURRENT_DESKTOP");
-	const auto value = result ? QString::fromLatin1(result) : QString();
-	const auto list = value.split(':', QString::SkipEmptyParts);
-
-	return "Linux "
-		+ (list.isEmpty() ? QString() : list[0] + ' ')
-		+ (IsWayland() ? "Wayland " : "X11 ")
-		+ "glibc "
-		+ GetGlibCVersion();
-}
-
-QString SystemCountry() {
-	return QLocale::system().name().split('_').last();
-}
-
-QString SystemLanguage() {
-	const auto system = QLocale::system();
-	const auto languages = system.uiLanguages();
-	return languages.isEmpty()
-		? system.name().split('_').first()
-		: languages.front();
-}
 
 QDate WhenSystemBecomesOutdated() {
 	if (IsLinux32Bit()) {
