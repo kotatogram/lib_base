@@ -37,39 +37,6 @@ namespace {
 
 WakeUpObserver *GlobalWakeUpObserver = nil;
 
-QString FromIdentifier(const QString &model) {
-	if (model.isEmpty() || model.toLower().indexOf("mac") < 0) {
-		return QString();
-	}
-	QStringList words;
-	QString word;
-	for (const QChar ch : model) {
-		if (!ch.isLetter()) {
-			continue;
-		}
-		if (ch.isUpper()) {
-			if (!word.isEmpty()) {
-				words.push_back(word);
-				word = QString();
-			}
-		}
-		word.append(ch);
-	}
-	if (!word.isEmpty()) {
-		words.push_back(word);
-	}
-	QString result;
-	for (const QString word : words) {
-		if (!result.isEmpty()
-			&& word != "Mac"
-			&& word != "Book") {
-			result.append(' ');
-		}
-		result.append(word);
-	}
-	return result;
-}
-
 int MinorVersion() {
 	static const int version = QSysInfo::macVersion();
 	constexpr int kShift = 2;
@@ -86,51 +53,6 @@ bool IsMacThatOrGreater() {
 }
 
 } // namespace
-
-QString DeviceModelPretty() {
-	size_t length = 0;
-	sysctlbyname("hw.model", nullptr, &length, nullptr, 0);
-	if (length > 0) {
-		QByteArray bytes(length, Qt::Uninitialized);
-		sysctlbyname("hw.model", bytes.data(), &length, nullptr, 0);
-		const QString parsed = FromIdentifier(QString::fromUtf8(bytes));
-		if (!parsed.isEmpty()) {
-			return parsed;
-		}
-	}
-	return "Mac";
-}
-
-QString SystemVersionPretty() {
-	const auto version = MinorVersion();
-	if (!version) {
-		return "OS X";
-	} else if (version < 12) {
-		return QString("OS X 10.%1").arg(version);
-	}
-	return QString("macOS 10.%1").arg(version);
-}
-
-QString SystemCountry() {
-	NSLocale *currentLocale = [NSLocale currentLocale];  // get the current locale.
-	NSString *countryCode = [currentLocale objectForKey:NSLocaleCountryCode];
-	return countryCode ? NS2QString(countryCode) : QString();
-}
-
-QString SystemLanguage() {
-	if (auto currentLocale = [NSLocale currentLocale]) { // get the current locale.
-		if (NSString *collator = [currentLocale objectForKey:NSLocaleCollatorIdentifier]) {
-			return NS2QString(collator);
-		}
-		if (NSString *identifier = [currentLocale objectForKey:NSLocaleIdentifier]) {
-			return NS2QString(identifier);
-		}
-		if (NSString *language = [currentLocale objectForKey:NSLocaleLanguageCode]) {
-			return NS2QString(language);
-		}
-	}
-	return QString();
-}
 
 QDate WhenSystemBecomesOutdated() {
 	if (!IsMac10_10OrGreater()) {
