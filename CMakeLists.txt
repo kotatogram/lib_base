@@ -114,6 +114,7 @@ PRIVATE
     base/qthelp_url.h
     base/qt_connection.h
     base/qt_signal_producer.h
+    base/required.h
     base/runtime_composer.cpp
     base/runtime_composer.h
     base/single_instance.cpp
@@ -147,7 +148,6 @@ PUBLIC
     desktop-app::external_qt
     desktop-app::external_openssl
     desktop-app::external_crash_reports
-    desktop-app::external_variant
     desktop-app::external_ranges
     desktop-app::external_gsl
     desktop-app::external_expected
