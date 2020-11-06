@@ -12,12 +12,19 @@
 #include <QtCore/QProcess>
 #include <QtCore/QFileInfo>
 #include <QtCore/QDir>
+#include <QtGui/QDesktopServices>
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusMessage>
 #include <QtDBus/QDBusReply>
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+
+extern "C" {
+#undef signals
+#include <gio/gio.h>
+#define signals public
+} // extern "C"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -53,47 +60,73 @@ bool DBusShowInFolder(const QString &filepath) {
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 bool ProcessShowInFolder(const QString &filepath) {
-	const auto absolutePath = QFileInfo(filepath).absoluteFilePath();
-	QProcess process;
-	process.start(
-		"xdg-mime",
-		QStringList() << "query" << "default" << "inode/directory");
-	process.waitForFinished();
-	auto output = QString::fromLatin1(process.readLine().simplified());
-	auto command = QString("xdg-open");
-	auto arguments = QStringList();
-	if (output == qstr("dolphin.desktop")
-		|| output == qstr("org.kde.dolphin.desktop")) {
-		command = "dolphin";
-		arguments << "--select" << absolutePath;
-	} else if (output == qstr("nautilus.desktop")
-		|| output == qstr("org.gnome.Nautilus.desktop")
-		|| output == qstr("nautilus-folder-handler.desktop")) {
-		command = "nautilus";
-		arguments << absolutePath;
-	} else if (output == qstr("nemo.desktop")) {
-		command = "nemo";
-		arguments << "--no-desktop" << absolutePath;
-	} else if (output == qstr("konqueror.desktop")
-		|| output == qstr("kfmclient_dir.desktop")) {
-		command = "konqueror";
-		arguments << "--select" << absolutePath;
-	} else {
-		arguments << QFileInfo(filepath).absoluteDir().absolutePath();
+	auto fileManagerAppInfo = g_app_info_get_default_for_type(
+		"inode/directory",
+		false);
+
+	if (!fileManagerAppInfo) {
+		return false;
 	}
-	return process.startDetached(command, arguments);
+
+	const auto fileManagerAppInfoId = QString(
+		g_app_info_get_id(fileManagerAppInfo));
+
+	g_object_unref(fileManagerAppInfo);
+
+	if (fileManagerAppInfoId == qstr("dolphin.desktop")
+		|| fileManagerAppInfoId == qstr("org.kde.dolphin.desktop")) {
+		return QProcess::startDetached("dolphin", {
+			"--select",
+			filepath
+		});
+	} else if (fileManagerAppInfoId == qstr("nautilus.desktop")
+		|| fileManagerAppInfoId == qstr("org.gnome.Nautilus.desktop")
+		|| fileManagerAppInfoId == qstr("nautilus-folder-handler.desktop")) {
+		return QProcess::startDetached("nautilus", {
+			filepath
+		});
+	} else if (fileManagerAppInfoId == qstr("nemo.desktop")) {
+		return QProcess::startDetached("nemo", {
+			"--no-desktop",
+			filepath
+		});
+	} else if (fileManagerAppInfoId == qstr("konqueror.desktop")
+		|| fileManagerAppInfoId == qstr("kfmclient_dir.desktop")) {
+		return QProcess::startDetached("konqueror", {
+			"--select",
+			filepath
+		});
+	}
+
+	return false;
 }
 
 } // namespace
 
 bool ShowInFolder(const QString &filepath) {
+	const auto absolutePath = QFileInfo(filepath).absoluteFilePath();
+	const auto absoluteDirPath = QFileInfo(filepath)
+		.absoluteDir()
+		.absolutePath();
+
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-	if (DBusShowInFolder(filepath)) {
+	if (DBusShowInFolder(absolutePath)) {
 		return true;
 	}
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
-	if (ProcessShowInFolder(filepath)) {
+	if (ProcessShowInFolder(absolutePath)) {
+		return true;
+	}
+
+	if (g_app_info_launch_default_for_uri(
+		("file://" + absoluteDirPath).toUtf8(),
+		nullptr,
+		nullptr)) {
+		return true;
+	}
+
+	if (QDesktopServices::openUrl(QUrl::fromLocalFile(absoluteDirPath))) {
 		return true;
 	}
 
