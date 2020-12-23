@@ -20,16 +20,6 @@
 #endif // Q_OS_LINUX
 
 namespace Platform {
-namespace {
-
-QString GetDesktopEnvironment() {
-	const auto value = qgetenv("XDG_CURRENT_DESKTOP");
-	return value.contains(':')
-		? value.left(value.indexOf(':'))
-		: value;
-}
-
-} // namespace
 
 QDate WhenSystemBecomesOutdated() {
 	const auto libcName = GetLibcName();
