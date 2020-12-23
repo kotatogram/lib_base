@@ -31,66 +31,6 @@ QString GetDesktopEnvironment() {
 
 } // namespace
 
-QString DeviceModelPretty() {
-#ifdef Q_PROCESSOR_X86_64
-	return "PC 64bit";
-#elif defined Q_PROCESSOR_X86_32 // Q_PROCESSOR_X86_64
-	return "PC 32bit";
-#else // Q_PROCESSOR_X86_64 || Q_PROCESSOR_X86_32
-	return "PC " + QSysInfo::buildCpuArchitecture();
-#endif // else for Q_PROCESSOR_X86_64 || Q_PROCESSOR_X86_32
-}
-
-QString SystemVersionPretty() {
-	static const auto result = [&] {
-		QStringList resultList{};
-
-#ifdef Q_OS_LINUX
-		resultList << "Linux";
-#else // Q_OS_LINUX
-		resultList << QSysInfo::kernelType();
-#endif // !Q_OS_LINUX
-
-		const auto desktopEnvironment = GetDesktopEnvironment();
-		if (!desktopEnvironment.isEmpty()) {
-			resultList << desktopEnvironment;
-		}
-
-		if (IsWayland()) {
-			resultList << "Wayland";
-		} else {
-			resultList << "X11";
-		}
-
-		const auto libcName = GetLibcName();
-		const auto libcVersion = GetLibcVersion();
-		if (!libcVersion.isEmpty()) {
-			if (!libcName.isEmpty()) {
-				resultList << libcName;
-			} else {
-				resultList << "libc";
-			}
-			resultList << libcVersion;
-		}
-
-		return resultList.join(' ');
-	}();
-
-	return result;
-}
-
-QString SystemCountry() {
-	return QLocale::system().name().split('_').last();
-}
-
-QString SystemLanguage() {
-	const auto system = QLocale::system();
-	const auto languages = system.uiLanguages();
-	return languages.isEmpty()
-		? system.name().split('_').first()
-		: languages.front();
-}
-
 QDate WhenSystemBecomesOutdated() {
 	const auto libcName = GetLibcName();
 	const auto libcVersion = GetLibcVersion();
