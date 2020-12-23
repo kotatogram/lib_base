@@ -44,7 +44,7 @@ bool DBusShowInFolder(const QString &filepath) {
 		"ShowItems");
 
 	message.setArguments({
-		QStringList("file://" + filepath),
+		QStringList{QUrl::fromLocalFile(filepath).toString()},
 		QString()
 	});
 
@@ -120,7 +120,7 @@ bool ShowInFolder(const QString &filepath) {
 	}
 
 	if (g_app_info_launch_default_for_uri(
-		("file://" + absoluteDirPath).toUtf8(),
+		g_filename_to_uri(absoluteDirPath.toUtf8(), nullptr, nullptr),
 		nullptr,
 		nullptr)) {
 		return true;
