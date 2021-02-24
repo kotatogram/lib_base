@@ -31,7 +31,11 @@ int AutoUpdateVersion() {
 }
 
 QString AutoUpdateKey() {
-	return "win";
+	if (IsWindows64Bit()) {
+		return "win64";
+	} else {
+		return "win";
+	}
 }
 
 bool IsWindowsXPOrGreater() {

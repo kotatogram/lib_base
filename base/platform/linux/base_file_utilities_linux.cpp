@@ -7,9 +7,12 @@
 #include "base/platform/linux/base_file_utilities_linux.h"
 
 #include "base/platform/base_platform_file_utilities.h"
+#include "base/platform/linux/base_linux_glib_helper.h"
+#include "base/integration.h"
 #include "base/algorithm.h"
 
 #include <QtCore/QProcess>
+#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QDir>
 #include <QtGui/QDesktopServices>
@@ -17,25 +20,45 @@
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 #include <QtDBus/QDBusConnection>
 #include <QtDBus/QDBusMessage>
-#include <QtDBus/QDBusReply>
+#include <QtDBus/QDBusError>
+#include <QtDBus/QDBusUnixFileDescriptor>
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-
-extern "C" {
-#undef signals
-#include <gio/gio.h>
-#define signals public
-} // extern "C"
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <stdio.h>
+#include <fcntl.h>
 
 namespace base::Platform {
 namespace {
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+bool PortalShowInFolder(const QString &filepath) {
+	const auto fd = open(QFile::encodeName(filepath).constData(), O_RDONLY);
+	if (fd == -1) {
+		return false;
+	}
+
+	auto message = QDBusMessage::createMethodCall(
+		"org.freedesktop.portal.Desktop",
+		"/org/freedesktop/portal/desktop",
+		"org.freedesktop.portal.OpenURI",
+		"OpenDirectory");
+
+	message.setArguments({
+		QString(),
+		QVariant::fromValue(QDBusUnixFileDescriptor(fd)),
+		QVariantMap()
+	});
+
+	close(fd);
+
+	const QDBusError error = QDBusConnection::sessionBus().call(message);
+	return !error.isValid();
+}
+
 bool DBusShowInFolder(const QString &filepath) {
 	auto message = QDBusMessage::createMethodCall(
 		"org.freedesktop.FileManager1",
@@ -48,14 +71,8 @@ bool DBusShowInFolder(const QString &filepath) {
 		QString()
 	});
 
-	const QDBusReply<void> reply = QDBusConnection::sessionBus().call(
-		message);
-
-	if (reply.isValid()) {
-		return true;
-	}
-
-	return false;
+	const QDBusError error = QDBusConnection::sessionBus().call(message);
+	return !error.isValid();
 }
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
@@ -113,6 +130,10 @@ bool ShowInFolder(const QString &filepath) {
 	if (DBusShowInFolder(absolutePath)) {
 		return true;
 	}
+
+	if (PortalShowInFolder(absolutePath)) {
+		return true;
+	}
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 	if (ProcessShowInFolder(absolutePath)) {
@@ -120,7 +141,10 @@ bool ShowInFolder(const QString &filepath) {
 	}
 
 	if (g_app_info_launch_default_for_uri(
-		g_filename_to_uri(absoluteDirPath.toUtf8(), nullptr, nullptr),
+		g_filename_to_uri(
+			absoluteDirPath.toUtf8().constData(),
+			nullptr,
+			nullptr),
 		nullptr,
 		nullptr)) {
 		return true;
@@ -219,6 +243,42 @@ void FlushFileData(QFile &file) {
 	if (const auto descriptor = file.handle()) {
 		fsync(descriptor);
 	}
+}
+
+bool IsNonExtensionMimeFrom(
+		const QString &path,
+		const flat_set<QString> &mimeTypes) {
+	const auto utf8 = path.toUtf8();
+	const auto file = gobject_wrap(g_file_new_for_path(utf8.constData()));
+	if (!file) {
+		return false;
+	}
+	const auto attributes = ""
+		G_FILE_ATTRIBUTE_STANDARD_TYPE ","
+		G_FILE_ATTRIBUTE_ACCESS_CAN_EXECUTE ","
+		G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE;
+	const auto info = gobject_wrap(g_file_query_info(
+		file.get(),
+		attributes,
+		G_FILE_QUERY_INFO_NONE,
+		nullptr,
+		nullptr));
+	if (!info) {
+		return false;
+	}
+	const auto type = g_file_info_get_content_type(info.get());
+	if (!type) {
+		Integration::Instance().logMessage(
+			QString("Content-Type for path '%1' could not be guessed.")
+				.arg(path));
+		return false;
+	}
+	const auto utf16 = QString::fromUtf8(type).toLower();
+	Integration::Instance().logMessage(
+		QString("Content-Type for path '%1' guessed as '%2'.")
+			.arg(path)
+			.arg(utf16));
+	return mimeTypes.contains(utf16);
 }
 
 } // namespace base::Platform

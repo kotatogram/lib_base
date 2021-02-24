@@ -7,7 +7,6 @@
 #pragma once
 
 #include "base/platform/base_platform_info.h"
-#include "base/build_config.h"
 
 namespace Platform {
 
@@ -16,22 +15,24 @@ inline constexpr bool IsLinux() {
 }
 
 inline constexpr bool IsLinux32Bit() {
-#ifdef ARCH_CPU_32_BITS
+#ifdef Q_PROCESSOR_X86_32
 	return true;
-#else // ARCH_CPU_32_BITS
+#else // Q_PROCESSOR_X86_32
 	return false;
-#endif // ARCH_CPU_32_BITS
+#endif // Q_PROCESSOR_X86_32
 }
 
 inline constexpr bool IsLinux64Bit() {
-#ifdef ARCH_CPU_64_BITS
+#ifdef Q_PROCESSOR_X86_64
 	return true;
-#else // ARCH_CPU_64_BITS
+#else // Q_PROCESSOR_X86_64
 	return false;
-#endif // ARCH_CPU_64_BITS
+#endif // Q_PROCESSOR_X86_64
 }
 
 inline constexpr bool IsWindows() { return false; }
+inline constexpr bool IsWindows32Bit() { return false; }
+inline constexpr bool IsWindows64Bit() { return false; }
 inline constexpr bool IsWindowsStoreBuild() { return false; }
 inline bool IsWindowsXPOrGreater() { return false; }
 inline bool IsWindowsVistaOrGreater() { return false; }

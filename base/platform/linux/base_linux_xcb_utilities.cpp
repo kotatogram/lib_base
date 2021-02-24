@@ -4,7 +4,7 @@
 // For license and copyright information please follow this link:
 // https://github.com/desktop-app/legal/blob/master/LEGAL
 //
-#include "base/platform/linux/base_xcb_utilities_linux.h"
+#include "base/platform/linux/base_linux_xcb_utilities.h"
 
 #include <QtGui/QGuiApplication>
 #include <qpa/qplatformnativeinterface.h>
@@ -43,6 +43,17 @@ std::optional<xcb_timestamp_t> GetAppTimeFromQt() {
 			QGuiApplication::primaryScreen())));
 }
 
+std::optional<xcb_window_t> GetRootWindow(xcb_connection_t *connection) {
+	const auto screen = xcb_setup_roots_iterator(
+		xcb_get_setup(connection)).data;
+
+	if (!screen) {
+		return std::nullopt;
+	}
+
+	return screen->root;
+}
+
 std::optional<xcb_atom_t> GetAtom(
 		xcb_connection_t *connection,
 		const QString &name) {
@@ -50,7 +61,7 @@ std::optional<xcb_atom_t> GetAtom(
 		connection,
 		0,
 		name.size(),
-		name.toUtf8());
+		name.toUtf8().constData());
 
 	auto reply = xcb_intern_atom_reply(
 		connection,
@@ -81,13 +92,10 @@ bool IsExtensionPresent(
 	return reply->present;
 }
 
-std::vector<xcb_atom_t> GetWMSupported(xcb_connection_t *connection) {
+std::vector<xcb_atom_t> GetWMSupported(
+		xcb_connection_t *connection,
+		xcb_window_t root) {
 	auto netWmAtoms = std::vector<xcb_atom_t>{};
-
-	const auto root = GetRootWindowFromQt();
-	if (!root.has_value()) {
-		return netWmAtoms;
-	}
 
 	const auto supportedAtom = GetAtom(connection, "_NET_SUPPORTED");
 	if (!supportedAtom.has_value()) {
@@ -101,7 +109,7 @@ std::vector<xcb_atom_t> GetWMSupported(xcb_connection_t *connection) {
 		const auto cookie = xcb_get_property(
 			connection,
 			false,
-			*root,
+			root,
 			*supportedAtom,
 			XCB_ATOM_ATOM,
 			offset,
@@ -137,6 +145,64 @@ std::vector<xcb_atom_t> GetWMSupported(xcb_connection_t *connection) {
 	} while (remaining > 0);
 
 	return netWmAtoms;
+}
+
+std::optional<xcb_window_t> GetSupportingWMCheck(
+		xcb_connection_t *connection,
+		xcb_window_t root) {
+	const auto supportingAtom = base::Platform::XCB::GetAtom(
+		connection,
+		"_NET_SUPPORTING_WM_CHECK");
+
+	if (!supportingAtom.has_value()) {
+		return std::nullopt;
+	}
+
+	const auto cookie = xcb_get_property(
+		connection,
+		false,
+		root,
+		*supportingAtom,
+		XCB_ATOM_WINDOW,
+		0,
+		1024);
+
+	auto reply = xcb_get_property_reply(
+		connection,
+		cookie,
+		nullptr);
+
+	if (!reply) {
+		return std::nullopt;
+	}
+
+	const auto window = (reply->format == 32 && reply->type == XCB_ATOM_WINDOW)
+		? std::optional<xcb_window_t>{
+			*reinterpret_cast<xcb_window_t*>(
+				xcb_get_property_value(reply))
+		} : std::nullopt;
+
+	free(reply);
+	return window;
+}
+
+bool IsSupportedByWM(const QString &atomName) {
+	CustomConnection connection;
+	if (xcb_connection_has_error(connection)) {
+		return false;
+	}
+
+	const auto root = GetRootWindow(connection);
+	if (!root.has_value()) {
+		return false;
+	}
+
+	const auto atom = GetAtom(connection, atomName);
+	if (!atom.has_value()) {
+		return false;
+	}
+
+	return ranges::contains(GetWMSupported(connection, *root), *atom);
 }
 
 } // namespace base::Platform::XCB

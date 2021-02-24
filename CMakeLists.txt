@@ -27,12 +27,18 @@ PRIVATE
     base/platform/linux/base_last_input_linux.h
     base/platform/linux/base_layout_switch_linux.cpp
     base/platform/linux/base_layout_switch_linux.h
+    base/platform/linux/base_linux_glib_helper.h
+    base/platform/linux/base_linux_gtk_integration_p.h
+    base/platform/linux/base_linux_gtk_integration.cpp
+    base/platform/linux/base_linux_gtk_integration.h
+    base/platform/linux/base_linux_xcb_utilities.cpp
+    base/platform/linux/base_linux_xcb_utilities.h
+    base/platform/linux/base_linux_xlib_helper.cpp
+    base/platform/linux/base_linux_xlib_helper.h
     base/platform/linux/base_process_linux.cpp
     base/platform/linux/base_process_linux.h
     base/platform/linux/base_url_scheme_linux.cpp
     base/platform/linux/base_url_scheme_linux.h
-    base/platform/linux/base_xcb_utilities_linux.cpp
-    base/platform/linux/base_xcb_utilities_linux.h
     base/platform/mac/base_file_utilities_mac.h
     base/platform/mac/base_file_utilities_mac.mm
     base/platform/mac/base_global_shortcuts_mac.mm
@@ -64,8 +70,11 @@ PRIVATE
     base/platform/win/base_url_scheme_win.cpp
     base/platform/win/base_url_scheme_win.h
     base/platform/win/base_windows_h.h
+    base/platform/win/base_windows_wrl.cpp
+    base/platform/win/base_windows_wrl.h
     base/platform/win/base_windows_safe_library.cpp
     base/platform/win/base_windows_safe_library.h
+    base/platform/win/wrl/wrl_implements_h.h
     base/platform/base_platform_global_shortcuts.h
     base/platform/base_platform_info.cpp
     base/platform/base_platform_info.h
@@ -150,6 +159,29 @@ PRIVATE
     base/base_pch.h
 )
 
+if (DESKTOP_APP_DISABLE_X11_INTEGRATION)
+    remove_target_sources(lib_base ${src_loc}
+        base/platform/linux/base_linux_xcb_utilities.cpp
+        base/platform/linux/base_linux_xcb_utilities.h
+        base/platform/linux/base_linux_xlib_helper.cpp
+        base/platform/linux/base_linux_xlib_helper.h
+    )
+endif()
+
+if (DESKTOP_APP_DISABLE_GTK_INTEGRATION)
+    remove_target_sources(lib_base ${src_loc}
+        base/platform/linux/base_linux_gtk_integration_p.h
+        base/platform/linux/base_linux_gtk_integration.cpp
+        base/platform/linux/base_linux_xlib_helper.cpp
+        base/platform/linux/base_linux_xlib_helper.h
+    )
+
+    nice_target_sources(lib_base ${src_loc}
+    PRIVATE
+        base/platform/linux/base_linux_gtk_integration_dummy.cpp
+    )
+endif()
+
 target_include_directories(lib_base
 PUBLIC
     ${src_loc}
@@ -170,15 +202,43 @@ PUBLIC
 if (LINUX)
     target_link_libraries(lib_base
     PUBLIC
-        desktop-app::external_xcb_keysyms
-        desktop-app::external_xcb_record
-        desktop-app::external_xcb_screensaver
-        desktop-app::external_xcb
         desktop-app::external_glib
     )
+
+    if (NOT DESKTOP_APP_DISABLE_X11_INTEGRATION)
+        target_link_libraries(lib_base
+        PUBLIC
+            desktop-app::external_xcb_keysyms
+            desktop-app::external_xcb_record
+            desktop-app::external_xcb_screensaver
+            desktop-app::external_xcb
+        )
+    endif()
+
+    if (NOT DESKTOP_APP_DISABLE_GTK_INTEGRATION)
+        find_package(PkgConfig REQUIRED)
+
+        if (DESKTOP_APP_USE_PACKAGED AND NOT DESKTOP_APP_USE_PACKAGED_LAZY)
+            pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
+            target_link_libraries(lib_base PUBLIC PkgConfig::GTK3)
+
+            if (NOT DESKTOP_APP_DISABLE_X11_INTEGRATION)
+                pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
+                target_link_libraries(lib_base PUBLIC PkgConfig::X11)
+            endif()
+        else()
+            pkg_search_module(GTK REQUIRED gtk+-3.0 gtk+-2.0)
+            target_include_directories(lib_base PUBLIC ${GTK_INCLUDE_DIRS})
+
+            if (NOT DESKTOP_APP_DISABLE_X11_INTEGRATION)
+                target_link_libraries(lib_base PUBLIC X11)
+            endif()
+        endif()
+    endif()
 endif()
 
-target_precompile_headers(lib_base_crash_report_writer REUSE_FROM lib_base)
+#target_precompile_headers(lib_base_crash_report_writer REUSE_FROM lib_base)
+target_precompile_headers(lib_base_crash_report_writer PRIVATE ${src_loc}/base/base_pch.h)
 nice_target_sources(lib_base_crash_report_writer ${src_loc}
 PRIVATE
     base/crash_report_header.cpp

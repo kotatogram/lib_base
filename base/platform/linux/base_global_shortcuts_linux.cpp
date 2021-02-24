@@ -10,13 +10,17 @@
 #include "base/global_shortcuts_generic.h"
 #include "base/integration.h"
 #include "base/platform/base_platform_info.h" // IsWayland
-#include "base/platform/linux/base_xcb_utilities_linux.h" // IsExtensionPresent
 #include "base/unique_qptr.h"
+
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+#include "base/platform/linux/base_linux_xcb_utilities.h" // CustomConnection, IsExtensionPresent
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 #include <QKeySequence>
 #include <QScopedPointer>
 #include <QSocketNotifier>
 
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 #include <xcb/record.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h> // xcb_key_symbols_*
@@ -24,16 +28,25 @@
 
 #include <X11/XF86keysym.h>
 #include <X11/keysym.h>
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 namespace base::Platform::GlobalShortcuts {
 namespace {
 
-using XcbReply = xcb_record_enable_context_reply_t;
+constexpr auto kShiftMouseButton = std::numeric_limits<uint64>::max() - 100;
 
 Fn<void(GlobalShortcutKeyGeneric descriptor, bool down)> ProcessCallback;
 
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+using XcbReply = xcb_record_enable_context_reply_t;
+
 bool IsKeypad(xcb_keysym_t keysym) {
 	return (xcb_is_keypad_key(keysym) || xcb_is_private_keypad_key(keysym));
+}
+
+bool SkipMouseButton(xcb_button_t b) {
+	return (b == 1) // Ignore the left button.
+		|| (b > 3 && b < 8); // Ignore the wheel.
 }
 
 class X11Manager final {
@@ -46,7 +59,7 @@ private:
 	void process(XcbReply *reply);
 	xcb_keysym_t computeKeysym(xcb_keycode_t detail, uint16_t state);
 
-	not_null<xcb_connection_t*> _connection;
+	XCB::CustomConnection _connection;
 	const unique_qptr<QObject> _object;
 	not_null<xcb_key_symbols_t*> _keySymbols;
 	std::unique_ptr<QSocketNotifier> _notifier;
@@ -55,8 +68,7 @@ private:
 };
 
 X11Manager::X11Manager()
-: _connection(xcb_connect(nullptr, nullptr))
-, _object(make_unique_q<QObject>())
+: _object(make_unique_q<QObject>())
 , _keySymbols(xcb_key_symbols_alloc(_connection)) {
 
 	using Log = Integration;
@@ -81,7 +93,12 @@ X11Manager::X11Manager()
 	auto recordRange = []() -> xcb_record_range_t {
 		xcb_record_range_t rr;
 		memset(&rr, 0, sizeof(rr));
-		rr.device_events = { XCB_KEY_PRESS, XCB_KEY_RELEASE };
+
+		// XCB_KEY_PRESS = 2
+		// XCB_KEY_RELEASE = 3
+		// XCB_BUTTON_PRESS = 4
+		// XCB_BUTTON_RELEASE = 5
+		rr.device_events = { XCB_KEY_PRESS, XCB_BUTTON_RELEASE };
 		return rr;
 	}();
 
@@ -150,20 +167,34 @@ void X11Manager::process(XcbReply *reply) {
 	if (!ProcessCallback) {
 		return;
 	}
-	auto events = reinterpret_cast<xcb_key_press_event_t*>(
+	// Seems like xcb_button_press_event_t and xcb_key_press_event_t structs
+	// are the same, so we can safely cast both of them
+	// to the xcb_key_press_event_t.
+	const auto events = reinterpret_cast<xcb_key_press_event_t*>(
 		xcb_record_enable_context_data(reply));
 
-	auto countEvents = xcb_record_enable_context_data_length(reply) /
+	const auto countEvents = xcb_record_enable_context_data_length(reply) /
 		sizeof(xcb_key_press_event_t);
 
 	for (auto e = events; e < (events + countEvents); e++) {
-		const auto isPress = e->response_type == XCB_KEY_PRESS;
-		const auto isRelease = e->response_type == XCB_KEY_RELEASE;
-		if (!isPress && !isRelease) {
+		const auto type = e->response_type;
+		const auto buttonPress = (type == XCB_BUTTON_PRESS);
+		const auto buttonRelease = (type == XCB_BUTTON_RELEASE);
+		const auto keyPress = (type == XCB_KEY_PRESS);
+		const auto keyRelease = (type == XCB_KEY_RELEASE);
+		const auto isButton = (buttonPress || buttonRelease);
+
+		if (!(keyPress || keyRelease || isButton)) {
 			continue;
 		}
-
-		ProcessCallback(computeKeysym(e->detail, e->state), isPress);
+		const auto code = e->detail;
+		if (isButton && SkipMouseButton(code)) {
+			return;
+		}
+		const auto descriptor = isButton
+			? (kShiftMouseButton + code)
+			: GlobalShortcutKeyGeneric(computeKeysym(code, e->state));
+		ProcessCallback(descriptor, keyPress || buttonPress);
 	}
 }
 
@@ -193,16 +224,19 @@ void EnsureX11ShortcutManager() {
 		_x11Manager = std::make_unique<X11Manager>();
 	}
 }
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 } // namespace
 
 bool Available() {
-	if (::Platform::IsWayland()) {
-		return false;
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+	if (!::Platform::IsWayland()) {
+		EnsureX11ShortcutManager();
+		return _x11Manager->available();
 	}
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
-	EnsureX11ShortcutManager();
-	return _x11Manager->available();
+	return false;
 }
 
 bool Allowed() {
@@ -212,15 +246,20 @@ bool Allowed() {
 void Start(Fn<void(GlobalShortcutKeyGeneric descriptor, bool down)> process) {
 	ProcessCallback = std::move(process);
 
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 	EnsureX11ShortcutManager();
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 }
 
 void Stop() {
 	ProcessCallback = nullptr;
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 	_x11Manager = nullptr;
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 }
 
 QString KeyName(GlobalShortcutKeyGeneric descriptor) {
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
 	// Telegram/ThirdParty/fcitx-qt5/platforminputcontext/qtkey.cpp
 	static const auto KeyToString = flat_map<uint64, int>{
 		{ XK_KP_Space, Qt::Key_Space },
@@ -535,6 +574,47 @@ QString KeyName(GlobalShortcutKeyGeneric descriptor) {
 		{ XF86XK_Sleep, Qt::Key_Sleep },
 	};
 
+	// Mouse.
+	// Taken from QXcbConnection::translateMouseButton.
+	static const auto XcbButtonToQt = flat_map<uint64, Qt::MouseButton>{
+		// { 1, Qt::LeftButton }, // Ignore the left button.
+		{ 2, Qt::MiddleButton },
+		{ 3, Qt::RightButton },
+		// Button values 4-7 were already handled as Wheel events.
+		{ 8, Qt::BackButton },
+		{ 9, Qt::ForwardButton },
+		{ 10, Qt::ExtraButton3 },
+		{ 11, Qt::ExtraButton4 },
+		{ 12, Qt::ExtraButton5 },
+		{ 13, Qt::ExtraButton6 },
+		{ 14, Qt::ExtraButton7 },
+		{ 15, Qt::ExtraButton8 },
+		{ 16, Qt::ExtraButton9 },
+		{ 17, Qt::ExtraButton10 },
+		{ 18, Qt::ExtraButton11 },
+		{ 19, Qt::ExtraButton12 },
+		{ 20, Qt::ExtraButton13 },
+		{ 21, Qt::ExtraButton14 },
+		{ 22, Qt::ExtraButton15 },
+		{ 23, Qt::ExtraButton16 },
+		{ 24, Qt::ExtraButton17 },
+		{ 25, Qt::ExtraButton18 },
+		{ 26, Qt::ExtraButton19 },
+		{ 27, Qt::ExtraButton20 },
+		{ 28, Qt::ExtraButton21 },
+		{ 29, Qt::ExtraButton22 },
+		{ 30, Qt::ExtraButton23 },
+		{ 31, Qt::ExtraButton24 },
+	};
+	if (descriptor > kShiftMouseButton) {
+		const auto button = descriptor - kShiftMouseButton;
+		if (XcbButtonToQt.contains(button)) {
+			return QString("Mouse %1").arg(button);
+		}
+	}
+	//
+
+	// Modifiers.
 	static const auto ModifierToString = flat_map<uint64, const_string>{
 		{ XK_Shift_L, "Shift" },
 		{ XK_Shift_R, "Right Shift" },
@@ -551,6 +631,7 @@ QString KeyName(GlobalShortcutKeyGeneric descriptor) {
 	if (modIt != end(ModifierToString)) {
 		return modIt->second.utf16();
 	}
+	//
 
 	const auto fromSequence = [](int k) {
 		return QKeySequence(k).toString(QKeySequence::NativeText);
@@ -567,6 +648,9 @@ QString KeyName(GlobalShortcutKeyGeneric descriptor) {
 	return (keyIt != end(KeyToString))
 		? prefix + fromSequence(keyIt->second)
 		: QString("\\x%1").arg(descriptor, 0, 16);
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+
+	return {};
 }
 
 } // namespace base::Platform::GlobalShortcuts

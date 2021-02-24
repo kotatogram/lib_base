@@ -6,6 +6,12 @@
 //
 #include "base/platform/linux/base_info_linux.h"
 
+#include "base/platform/linux/base_linux_gtk_integration.h"
+
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+#include "base/platform/linux/base_linux_xcb_utilities.h"
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+
 #include <QtCore/QJsonObject>
 #include <QtCore/QFile>
 #include <QtCore/QProcess>
@@ -13,6 +19,8 @@
 #include <QtCore/QVersionNumber>
 #include <QtCore/QDate>
 #include <QtGui/QGuiApplication>
+
+#include <glib.h>
 
 // this file is used on both Linux & BSD
 #ifdef Q_OS_LINUX
@@ -75,10 +83,21 @@ QString GetLibcVersion() {
 }
 
 bool IsWayland() {
-	return QGuiApplication::platformName().startsWith("wayland", Qt::CaseInsensitive);
+	return QGuiApplication::instance()
+		? QGuiApplication::platformName().startsWith(
+			"wayland",
+			Qt::CaseInsensitive)
+		: qEnvironmentVariableIsSet("WAYLAND_DISPLAY");
 }
 
 void Start(QJsonObject options) {
+	using base::Platform::GtkIntegration;
+	if (const auto integration = GtkIntegration::Instance()) {
+		integration->prepareEnvironment();
+		integration->load();
+	} else {
+		g_warning("GTK integration is disabled, some feature unavailable. ");
+	}
 }
 
 void Finish() {
