@@ -14,10 +14,10 @@
 #endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-#include <QtDBus/QDBusConnection>
-#include <QtDBus/QDBusMessage>
-#include <QtDBus/QDBusReply>
-#include <QtDBus/QDBusError>
+#include "base/platform/linux/base_linux_glibmm_helper.h"
+
+#include <glibmm.h>
+#include <giomm.h>
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 #ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
@@ -71,39 +71,47 @@ std::optional<crl::time> FreedesktopDBusLastUserInputTime() {
 		return std::nullopt;
 	}
 
-	static const auto Message = QDBusMessage::createMethodCall(
-		"org.freedesktop.ScreenSaver",
-		"/org/freedesktop/ScreenSaver",
-		"org.freedesktop.ScreenSaver",
-		"GetSessionIdleTime");
+	try {
+		const auto connection = Gio::DBus::Connection::get_sync(
+			Gio::DBus::BusType::BUS_TYPE_SESSION);
 
-	const QDBusReply<uint> reply = QDBusConnection::sessionBus().call(
-		Message);
+		auto reply = connection->call_sync(
+			"/org/freedesktop/ScreenSaver",
+			"org.freedesktop.ScreenSaver",
+			"GetSessionIdleTime",
+			{},
+			"org.freedesktop.ScreenSaver");
 
-	static const auto NotSupportedErrors = {
-		QDBusError::Disconnected,
-		QDBusError::ServiceUnknown,
-		QDBusError::NotSupported,
-	};
+		const auto value = GlibVariantCast<uint>(reply.get_child(0));
+		return (crl::now() - static_cast<crl::time>(value));
+	} catch (const Glib::Error &e) {
+		static const auto NotSupportedErrors = {
+			"org.freedesktop.DBus.Error.Disconnected",
+			"org.freedesktop.DBus.Error.ServiceUnknown",
+			"org.freedesktop.DBus.Error.NotSupported",
+		};
 
-	static const auto NotSupportedErrorsToLog = {
-		QDBusError::AccessDenied,
-	};
+		static const auto NotSupportedErrorsToLog = {
+			"org.freedesktop.DBus.Error.AccessDenied",
+		};
 
-	if (reply.isValid()) {
-		return (crl::now() - static_cast<crl::time>(reply.value()));
-	} else if (ranges::contains(NotSupportedErrors, reply.error().type())) {
-		NotSupported = true;
-	} else {
-		if (ranges::contains(NotSupportedErrorsToLog, reply.error().type())) {
+		const auto errorName = Gio::DBus::ErrorUtils::get_remote_error(e);
+		if (ranges::contains(NotSupportedErrors, errorName)) {
+			NotSupported = true;
+			return std::nullopt;
+		} else if (ranges::contains(NotSupportedErrorsToLog, errorName)) {
 			NotSupported = true;
 		}
 
 		Integration::Instance().logMessage(
 			QString("Unable to get last user input time "
-				"from org.freedesktop.ScreenSaver: %1: %2")
-				.arg(reply.error().name())
-				.arg(reply.error().message()));
+				"from org.freedesktop.ScreenSaver: %1")
+				.arg(QString::fromStdString(e.what())));
+	} catch (const std::exception &e) {
+		Integration::Instance().logMessage(
+			QString("Unable to get last user input time "
+				"from org.freedesktop.ScreenSaver: %1")
+				.arg(QString::fromStdString(e.what())));
 	}
 
 	return std::nullopt;
@@ -116,38 +124,46 @@ std::optional<crl::time> MutterDBusLastUserInputTime() {
 		return std::nullopt;
 	}
 
-	static const auto Message = QDBusMessage::createMethodCall(
-		"org.gnome.Mutter.IdleMonitor",
-		"/org/gnome/Mutter/IdleMonitor/Core",
-		"org.gnome.Mutter.IdleMonitor",
-		"GetIdletime");
+	try {
+		const auto connection = Gio::DBus::Connection::get_sync(
+			Gio::DBus::BusType::BUS_TYPE_SESSION);
 
-	const QDBusReply<qulonglong> reply = QDBusConnection::sessionBus().call(
-		Message);
+		auto reply = connection->call_sync(
+			"/org/gnome/Mutter/IdleMonitor/Core",
+			"org.gnome.Mutter.IdleMonitor",
+			"GetIdletime",
+			{},
+			"org.gnome.Mutter.IdleMonitor");
 
-	static const auto NotSupportedErrors = {
-		QDBusError::Disconnected,
-		QDBusError::ServiceUnknown,
-	};
+		const auto value = GlibVariantCast<uint>(reply.get_child(0));
+		return (crl::now() - static_cast<crl::time>(value));
+	} catch (const Glib::Error &e) {
+		static const auto NotSupportedErrors = {
+			"org.freedesktop.DBus.Error.Disconnected",
+			"org.freedesktop.DBus.Error.ServiceUnknown",
+		};
 
-	static const auto NotSupportedErrorsToLog = {
-		QDBusError::AccessDenied,
-	};
+		static const auto NotSupportedErrorsToLog = {
+			"org.freedesktop.DBus.Error.AccessDenied",
+		};
 
-	if (reply.isValid()) {
-		return (crl::now() - static_cast<crl::time>(reply.value()));
-	} else if (ranges::contains(NotSupportedErrors, reply.error().type())) {
-		NotSupported = true;
-	} else {
-		if (ranges::contains(NotSupportedErrorsToLog, reply.error().type())) {
+		const auto errorName = Gio::DBus::ErrorUtils::get_remote_error(e);
+		if (ranges::contains(NotSupportedErrors, errorName)) {
+			NotSupported = true;
+			return std::nullopt;
+		} else if (ranges::contains(NotSupportedErrorsToLog, errorName)) {
 			NotSupported = true;
 		}
 
 		Integration::Instance().logMessage(
 			QString("Unable to get last user input time "
-				"from org.gnome.Mutter.IdleMonitor: %1: %2")
-				.arg(reply.error().name())
-				.arg(reply.error().message()));
+				"from org.gnome.Mutter.IdleMonitor: %1")
+				.arg(QString::fromStdString(e.what())));
+	} catch (const std::exception &e) {
+		Integration::Instance().logMessage(
+			QString("Unable to get last user input time "
+				"from org.gnome.Mutter.IdleMonitor: %1")
+				.arg(QString::fromStdString(e.what())));
 	}
 
 	return std::nullopt;
@@ -158,7 +174,7 @@ std::optional<crl::time> MutterDBusLastUserInputTime() {
 
 std::optional<crl::time> LastUserInputTime() {
 #ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
-	if (!::Platform::IsWayland()) {
+	if (::Platform::IsX11()) {
 		const auto xcbResult = XCBLastUserInputTime();
 		if (xcbResult.has_value()) {
 			return xcbResult;

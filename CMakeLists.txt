@@ -27,7 +27,9 @@ PRIVATE
     base/platform/linux/base_last_input_linux.h
     base/platform/linux/base_layout_switch_linux.cpp
     base/platform/linux/base_layout_switch_linux.h
-    base/platform/linux/base_linux_glib_helper.h
+    base/platform/linux/base_linux_dbus_utilities.cpp
+    base/platform/linux/base_linux_dbus_utilities.h
+    base/platform/linux/base_linux_glibmm_helper.h
     base/platform/linux/base_linux_gtk_integration_p.h
     base/platform/linux/base_linux_gtk_integration.cpp
     base/platform/linux/base_linux_gtk_integration.h
@@ -159,6 +161,13 @@ PRIVATE
     base/base_pch.h
 )
 
+if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
+    remove_target_sources(lib_base ${src_loc}
+        base/platform/linux/base_linux_dbus_utilities.cpp
+        base/platform/linux/base_linux_dbus_utilities.h
+    )
+endif()
+
 if (DESKTOP_APP_DISABLE_X11_INTEGRATION)
     remove_target_sources(lib_base ${src_loc}
         base/platform/linux/base_linux_xcb_utilities.cpp
@@ -202,6 +211,7 @@ PUBLIC
 if (LINUX)
     target_link_libraries(lib_base
     PUBLIC
+        desktop-app::external_glibmm
         desktop-app::external_glib
     )
 
@@ -236,6 +246,8 @@ if (LINUX)
         endif()
     endif()
 endif()
+
+target_compile_definitions(lib_base PRIVATE G_LOG_DOMAIN="lib_base")
 
 #target_precompile_headers(lib_base_crash_report_writer REUSE_FROM lib_base)
 target_precompile_headers(lib_base_crash_report_writer PRIVATE ${src_loc}/base/base_pch.h)

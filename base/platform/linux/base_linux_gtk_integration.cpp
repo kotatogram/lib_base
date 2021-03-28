@@ -79,11 +79,11 @@ bool SetupGtkBase(QLibrary &lib) {
 		// Otherwise we get segfault in Ubuntu 17.04 in gtk_init_check() call.
 		// See https://github.com/telegramdesktop/tdesktop/issues/3176
 		// See https://github.com/telegramdesktop/tdesktop/issues/3162
-		if(::Platform::IsWayland()) {
+		if (::Platform::IsWayland()) {
 			Integration::Instance().logMessage(
 				"Limit allowed GDK backends to wayland,x11");
 			gdk_set_allowed_backends("wayland,x11");
-		} else {
+		} else if (::Platform::IsX11()) {
 			Integration::Instance().logMessage(
 				"Limit allowed GDK backends to x11,wayland");
 			gdk_set_allowed_backends("x11,wayland");
@@ -225,7 +225,7 @@ GtkIntegration::GtkIntegration() {
 GtkIntegration *GtkIntegration::Instance() {
 	static const auto useGtkIntegration = !qEnvironmentVariableIsSet(
 		kDisableGtkIntegration.utf8().constData());
-	
+
 	if (!useGtkIntegration) {
 		return nullptr;
 	}
@@ -317,9 +317,9 @@ std::optional<bool> GtkIntegration::getBoolSetting(
 		return std::nullopt;
 	}
 	Integration::Instance().logMessage(
-		QString("Getting GTK setting, %1: %2")
-			.arg(propertyName)
-			.arg(*value ? "[TRUE]" : "[FALSE]"));
+		QString("Getting GTK setting, %1: %2").arg(
+			propertyName,
+			*value ? "[TRUE]" : "[FALSE]"));
 	return *value;
 }
 
@@ -344,9 +344,9 @@ std::optional<QString> GtkIntegration::getStringSetting(
 	const auto str = QString::fromUtf8(*value);
 	g_free(*value);
 	Integration::Instance().logMessage(
-		QString("Getting GTK setting, %1: '%2'")
-			.arg(propertyName)
-			.arg(str));
+		QString("Getting GTK setting, %1: '%2'").arg(
+			propertyName,
+			str));
 	return str;
 }
 

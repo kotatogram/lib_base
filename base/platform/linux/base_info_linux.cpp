@@ -21,6 +21,8 @@
 #include <QtGui/QGuiApplication>
 
 #include <glib.h>
+#include <glibmm.h>
+#include <giomm.h>
 
 // this file is used on both Linux & BSD
 #ifdef Q_OS_LINUX
@@ -82,6 +84,12 @@ QString GetLibcVersion() {
 	return QString();
 }
 
+bool IsX11() {
+	return QGuiApplication::instance()
+		? QGuiApplication::platformName() == "xcb"
+		: qEnvironmentVariableIsSet("DISPLAY");
+}
+
 bool IsWayland() {
 	return QGuiApplication::instance()
 		? QGuiApplication::platformName().startsWith(
@@ -91,12 +99,15 @@ bool IsWayland() {
 }
 
 void Start(QJsonObject options) {
+	Glib::init();
+	Gio::init();
+
 	using base::Platform::GtkIntegration;
 	if (const auto integration = GtkIntegration::Instance()) {
 		integration->prepareEnvironment();
 		integration->load();
 	} else {
-		g_warning("GTK integration is disabled, some feature unavailable. ");
+		g_warning("GTK integration is disabled, some feature unavailable.");
 	}
 }
 

@@ -7,8 +7,6 @@
 #include "base/platform/linux/base_file_utilities_linux.h"
 
 #include "base/platform/base_platform_file_utilities.h"
-#include "base/platform/linux/base_linux_glib_helper.h"
-#include "base/integration.h"
 #include "base/algorithm.h"
 
 #include <QtCore/QProcess>
@@ -17,12 +15,9 @@
 #include <QtCore/QDir>
 #include <QtGui/QDesktopServices>
 
-#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-#include <QtDBus/QDBusConnection>
-#include <QtDBus/QDBusMessage>
-#include <QtDBus/QDBusError>
-#include <QtDBus/QDBusUnixFileDescriptor>
-#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+#include <gio/gunixfdlist.h>
+#include <glibmm.h>
+#include <giomm.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -36,79 +31,102 @@ namespace {
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 bool PortalShowInFolder(const QString &filepath) {
-	const auto fd = open(QFile::encodeName(filepath).constData(), O_RDONLY);
-	if (fd == -1) {
-		return false;
+	try {
+		const auto connection = Gio::DBus::Connection::get_sync(
+			Gio::DBus::BusType::BUS_TYPE_SESSION);
+
+		const auto fd = open(
+			QFile::encodeName(filepath).constData(),
+			O_RDONLY);
+
+		if (fd == -1) {
+			return false;
+		}
+
+		const auto guard = gsl::finally([&] { close(fd); });
+		auto outFdList = Glib::RefPtr<Gio::UnixFDList>();
+
+		connection->call_sync(
+			"/org/freedesktop/portal/desktop",
+			"org.freedesktop.portal.OpenURI",
+			"OpenDirectory",
+			Glib::VariantContainerBase::create_tuple({
+				Glib::Variant<Glib::ustring>::create({}),
+				Glib::wrap(g_variant_new_handle(0)),
+				Glib::Variant<
+					std::map<Glib::ustring, Glib::VariantBase>>::create({}),
+			}),
+			Glib::wrap(g_unix_fd_list_new_from_array(&fd, 1)),
+			outFdList,
+			"org.freedesktop.portal.Desktop");
+
+		return true;
+	} catch (...) {
 	}
 
-	auto message = QDBusMessage::createMethodCall(
-		"org.freedesktop.portal.Desktop",
-		"/org/freedesktop/portal/desktop",
-		"org.freedesktop.portal.OpenURI",
-		"OpenDirectory");
-
-	message.setArguments({
-		QString(),
-		QVariant::fromValue(QDBusUnixFileDescriptor(fd)),
-		QVariantMap()
-	});
-
-	close(fd);
-
-	const QDBusError error = QDBusConnection::sessionBus().call(message);
-	return !error.isValid();
+	return false;
 }
 
 bool DBusShowInFolder(const QString &filepath) {
-	auto message = QDBusMessage::createMethodCall(
-		"org.freedesktop.FileManager1",
-		"/org/freedesktop/FileManager1",
-		"org.freedesktop.FileManager1",
-		"ShowItems");
+	try {
+		const auto connection = Gio::DBus::Connection::get_sync(
+			Gio::DBus::BusType::BUS_TYPE_SESSION);
 
-	message.setArguments({
-		QStringList{QUrl::fromLocalFile(filepath).toString()},
-		QString()
-	});
+		connection->call_sync(
+			"/org/freedesktop/FileManager1",
+			"org.freedesktop.FileManager1",
+			"ShowItems",
+			Glib::VariantContainerBase::create_tuple({
+				Glib::Variant<std::vector<Glib::ustring>>::create({
+					Glib::filename_to_uri(filepath.toStdString())
+				}),
+				Glib::Variant<Glib::ustring>::create({}),
+			}),
+			"org.freedesktop.FileManager1");
 
-	const QDBusError error = QDBusConnection::sessionBus().call(message);
-	return !error.isValid();
+		return true;
+	} catch (...) {
+	}
+
+	return false;
 }
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 bool ProcessShowInFolder(const QString &filepath) {
-	auto fileManagerAppInfo = g_app_info_get_default_for_type(
-		"inode/directory",
-		false);
+	const auto fileManager = [] {
+		try {
+			const auto appInfo = Gio::AppInfo::get_default_for_type(
+				"inode/directory",
+				false);
 
-	if (!fileManagerAppInfo) {
-		return false;
-	}
+			if (appInfo) {
+				return QString::fromStdString(appInfo->get_id());
+			}
+		} catch (...) {
+		}
 
-	const auto fileManagerAppInfoId = QString(
-		g_app_info_get_id(fileManagerAppInfo));
+		return QString();
+	}();
 
-	g_object_unref(fileManagerAppInfo);
-
-	if (fileManagerAppInfoId == qstr("dolphin.desktop")
-		|| fileManagerAppInfoId == qstr("org.kde.dolphin.desktop")) {
+	if (fileManager == qstr("dolphin.desktop")
+		|| fileManager == qstr("org.kde.dolphin.desktop")) {
 		return QProcess::startDetached("dolphin", {
 			"--select",
 			filepath
 		});
-	} else if (fileManagerAppInfoId == qstr("nautilus.desktop")
-		|| fileManagerAppInfoId == qstr("org.gnome.Nautilus.desktop")
-		|| fileManagerAppInfoId == qstr("nautilus-folder-handler.desktop")) {
+	} else if (fileManager == qstr("nautilus.desktop")
+		|| fileManager == qstr("org.gnome.Nautilus.desktop")
+		|| fileManager == qstr("nautilus-folder-handler.desktop")) {
 		return QProcess::startDetached("nautilus", {
 			filepath
 		});
-	} else if (fileManagerAppInfoId == qstr("nemo.desktop")) {
+	} else if (fileManager == qstr("nemo.desktop")) {
 		return QProcess::startDetached("nemo", {
 			"--no-desktop",
 			filepath
 		});
-	} else if (fileManagerAppInfoId == qstr("konqueror.desktop")
-		|| fileManagerAppInfoId == qstr("kfmclient_dir.desktop")) {
+	} else if (fileManager == qstr("konqueror.desktop")
+		|| fileManager == qstr("kfmclient_dir.desktop")) {
 		return QProcess::startDetached("konqueror", {
 			"--select",
 			filepath
@@ -121,36 +139,35 @@ bool ProcessShowInFolder(const QString &filepath) {
 } // namespace
 
 bool ShowInFolder(const QString &filepath) {
-	const auto absolutePath = QFileInfo(filepath).absoluteFilePath();
-	const auto absoluteDirPath = QFileInfo(filepath)
-		.absoluteDir()
-		.absolutePath();
-
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-	if (DBusShowInFolder(absolutePath)) {
+	if (DBusShowInFolder(filepath)) {
 		return true;
 	}
 
-	if (PortalShowInFolder(absolutePath)) {
+	if (PortalShowInFolder(filepath)) {
 		return true;
 	}
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
-	if (ProcessShowInFolder(absolutePath)) {
+	if (ProcessShowInFolder(filepath)) {
 		return true;
 	}
 
-	if (g_app_info_launch_default_for_uri(
-		g_filename_to_uri(
-			absoluteDirPath.toUtf8().constData(),
-			nullptr,
-			nullptr),
-		nullptr,
-		nullptr)) {
+	const auto folder = QFileInfo(filepath).absolutePath();
+	try {
+		if (Gio::AppInfo::launch_default_for_uri(
+			Glib::filename_to_uri(folder.toStdString()))) {
+			return true;
+		}
+	} catch (...) {
+	}
+
+	const auto qUrlFolder = QUrl::fromLocalFile(folder);
+	if (QDesktopServices::openUrl(qUrlFolder)) {
 		return true;
 	}
 
-	if (QDesktopServices::openUrl(QUrl::fromLocalFile(absoluteDirPath))) {
+	if (QProcess::startDetached("xdg-open", { qUrlFolder.toEncoded() })) {
 		return true;
 	}
 
@@ -180,7 +197,7 @@ QString CurrentExecutablePath(int argc, char *argv[]) {
 		auto filename = QFile::decodeName(result);
 		auto deletedPostfix = qstr(" (deleted)");
 		if (filename.endsWith(deletedPostfix)
-			&& !QFileInfo(filename).exists()) {
+			&& !QFileInfo::exists(filename)) {
 			filename.chop(deletedPostfix.size());
 		}
 		return filename;
@@ -243,42 +260,6 @@ void FlushFileData(QFile &file) {
 	if (const auto descriptor = file.handle()) {
 		fsync(descriptor);
 	}
-}
-
-bool IsNonExtensionMimeFrom(
-		const QString &path,
-		const flat_set<QString> &mimeTypes) {
-	const auto utf8 = path.toUtf8();
-	const auto file = gobject_wrap(g_file_new_for_path(utf8.constData()));
-	if (!file) {
-		return false;
-	}
-	const auto attributes = ""
-		G_FILE_ATTRIBUTE_STANDARD_TYPE ","
-		G_FILE_ATTRIBUTE_ACCESS_CAN_EXECUTE ","
-		G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE;
-	const auto info = gobject_wrap(g_file_query_info(
-		file.get(),
-		attributes,
-		G_FILE_QUERY_INFO_NONE,
-		nullptr,
-		nullptr));
-	if (!info) {
-		return false;
-	}
-	const auto type = g_file_info_get_content_type(info.get());
-	if (!type) {
-		Integration::Instance().logMessage(
-			QString("Content-Type for path '%1' could not be guessed.")
-				.arg(path));
-		return false;
-	}
-	const auto utf16 = QString::fromUtf8(type).toLower();
-	Integration::Instance().logMessage(
-		QString("Content-Type for path '%1' guessed as '%2'.")
-			.arg(path)
-			.arg(utf16));
-	return mimeTypes.contains(utf16);
 }
 
 } // namespace base::Platform
