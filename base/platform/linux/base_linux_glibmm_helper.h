@@ -26,6 +26,10 @@ auto GlibVariantCast(const Glib::VariantBase &data) {
 } // namespace base
 
 #ifndef DESKTOP_APP_USE_PACKAGED
+#define DESKTOP_APP_GLIBMM_BACKPORTS
+#endif // !DESKTOP_APP_USE_PACKAGED
+
+#ifdef DESKTOP_APP_GLIBMM_BACKPORTS
 // taken from https://github.com/GNOME/glibmm/commit/6e205b721ebb26264bb00bdf294e04255de34f34
 namespace Glib {
 
@@ -225,4 +229,4 @@ VariantIter Variant<std::tuple<Types...>>::get_iter() const
 }
 
 } // namespace Glib
-#endif // !DESKTOP_APP_USE_PACKAGED
+#endif // DESKTOP_APP_GLIBMM_BACKPORTS
