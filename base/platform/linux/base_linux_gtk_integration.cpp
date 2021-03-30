@@ -223,7 +223,7 @@ GtkIntegration::GtkIntegration() {
 }
 
 GtkIntegration *GtkIntegration::Instance() {
-	if (!Integration()::Insatance().gtkIntegrationEnabled()) {
+	if (!Integration::Instance().gtkIntegrationEnabled()) {
 		return nullptr;
 	}
 
