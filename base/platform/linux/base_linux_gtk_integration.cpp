@@ -223,10 +223,7 @@ GtkIntegration::GtkIntegration() {
 }
 
 GtkIntegration *GtkIntegration::Instance() {
-	static const auto useGtkIntegration = !qEnvironmentVariableIsSet(
-		kDisableGtkIntegration.utf8().constData());
-
-	if (!useGtkIntegration) {
+	if (!Integration()::Insatance().gtkIntegrationEnabled()) {
 		return nullptr;
 	}
 
@@ -251,12 +248,6 @@ void GtkIntegration::prepareEnvironment() {
 			"to any value, however, if qgtk2 theme or style is used, "
 			"this will lead to a crash.",
 			kIgnoreGtkIncompatibility.utf8().constData());
-
-		g_message(
-			"GTK integration can be disabled by setting %s to any value. "
-			"Keep in mind that this will lead to "
-			"some features being unavailable.",
-			kDisableGtkIntegration.utf8().constData());
 
 		qunsetenv("QT_QPA_PLATFORMTHEME");
 		qunsetenv("QT_STYLE_OVERRIDE");
