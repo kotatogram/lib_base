@@ -23,6 +23,8 @@ public:
 	virtual void logMessage(const QString &message) = 0;
 	virtual void logAssertionViolation(const QString &info);
 
+	[[nodiscard]] virtual bool gtkIntegrationEnabled() const = 0;
+
 	[[nodiscard]] QString executableDir() const;
 	[[nodiscard]] QString executableName() const;
 	[[nodiscard]] QString executablePath() const;
