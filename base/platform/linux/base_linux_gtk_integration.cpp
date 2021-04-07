@@ -18,7 +18,13 @@
 
 namespace base {
 namespace Platform {
-namespace Gtk {
+
+using namespace Gtk;
+
+namespace {
+
+bool TriedToInit = false;
+bool Loaded = false;
 
 bool LoadLibrary(QLibrary &lib, const char *name, int version) {
 #ifdef LINK_TO_GTK
@@ -58,15 +64,6 @@ bool LoadLibrary(QLibrary &lib, const char *name, int version) {
 #endif // !LINK_TO_GTK
 }
 
-} // namespace Gtk
-
-namespace {
-
-using namespace Gtk;
-
-bool TriedToInit = false;
-bool Loaded = false;
-
 void GtkMessageHandler(
 		const gchar *log_domain,
 		GLogLevelFlags log_level,
@@ -82,9 +79,9 @@ void GtkMessageHandler(
 }
 
 bool SetupGtkBase(QLibrary &lib) {
-	if (!LOAD_GTK_SYMBOL(lib, gtk_init_check)) return false;
+	if (!LOAD_GTK_SYMBOL(lib, "gtk_init_check", gtk_init_check)) return false;
 
-	if (LOAD_GTK_SYMBOL(lib, gdk_set_allowed_backends)) {
+	if (LOAD_GTK_SYMBOL(lib, "gdk_set_allowed_backends", gdk_set_allowed_backends)) {
 		// We work only with Wayland and X11 GDK backends.
 		// Otherwise we get segfault in Ubuntu 17.04 in gtk_init_check() call.
 		// See https://github.com/telegramdesktop/tdesktop/issues/3176
@@ -289,8 +286,8 @@ void GtkIntegration::load() {
 	}
 
 	if (Loaded) {
-		LOAD_GTK_SYMBOL(_lib, gtk_check_version);
-		LOAD_GTK_SYMBOL(_lib, gtk_settings_get_default);
+		LOAD_GTK_SYMBOL(_lib, "gtk_check_version", gtk_check_version);
+		LOAD_GTK_SYMBOL(_lib, "gtk_settings_get_default", gtk_settings_get_default);
 
 		SetIconTheme();
 		SetCursorSize();
