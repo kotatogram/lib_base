@@ -26,6 +26,7 @@ public:
 
 	void prepareEnvironment();
 	void load();
+	void initializeSettings();
 	[[nodiscard]] bool loaded() const;
 
 	[[nodiscard]] bool checkVersion(
