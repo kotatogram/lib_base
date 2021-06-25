@@ -18,6 +18,11 @@ auto MakeGlibVariant(T &&data) {
 }
 
 template <typename T>
+auto MakeGlibVariant(const T &data) {
+	return Glib::Variant<T>::create(data);
+}
+
+template <typename T>
 auto GlibVariantCast(const Glib::VariantBase &data) {
 	return Glib::VariantBase::cast_dynamic<Glib::Variant<T>>(data).get();
 }
@@ -144,7 +149,7 @@ Variant<std::tuple<Types...>>::create(const std::tuple<Types...>& data)
 	detail::expand_tuple(variants, data, std::index_sequence_for<Types...>{});
 
 	using var_ptr = GVariant*;
-	var_ptr* const var_array = new var_ptr[sizeof... (Types)];
+	var_ptr var_array[sizeof... (Types)];
 
 	for (std::vector<VariantBase>::size_type i = 0; i < variants.size(); i++)
 		var_array[i] = const_cast<GVariant*>(variants[i].gobj());

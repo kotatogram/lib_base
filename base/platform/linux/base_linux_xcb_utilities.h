@@ -10,27 +10,39 @@
 
 namespace base::Platform::XCB {
 
-class CustomConnection {
+struct ConnectionDeleter {
+	void operator()(xcb_connection_t *value) {
+		xcb_disconnect(value);
+	}
+};
+
+using ConnectionPointer = std::unique_ptr<xcb_connection_t, ConnectionDeleter>;
+
+class CustomConnection : ConnectionPointer {
 public:
 	CustomConnection()
-	: _connection(xcb_connect(nullptr, nullptr)) {
-	}
-
-	~CustomConnection() {
-		xcb_disconnect(_connection);
+	: ConnectionPointer(xcb_connect(nullptr, nullptr)) {
 	}
 
 	[[nodiscard]] operator xcb_connection_t*() const {
-		return _connection;
+		return get();
 	}
-
-	[[nodiscard]] not_null<xcb_connection_t*> get() const {
-		return _connection;
-	}
-
-private:
-	not_null<xcb_connection_t*> _connection;
 };
+
+template <typename T>
+struct ReplyDeleter {
+	void operator()(T *value) {
+		free(value);
+	}
+};
+
+template <typename T>
+using ReplyPointer = std::unique_ptr<T, ReplyDeleter<T>>;
+
+template <typename T>
+ReplyPointer<T> MakeReplyPointer(T *reply) {
+	return ReplyPointer<T>(reply);
+}
 
 xcb_connection_t *GetConnectionFromQt();
 std::optional<xcb_window_t> GetRootWindowFromQt();

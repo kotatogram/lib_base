@@ -27,12 +27,17 @@ PRIVATE
     base/platform/linux/base_last_input_linux.h
     base/platform/linux/base_layout_switch_linux.cpp
     base/platform/linux/base_layout_switch_linux.h
+    base/platform/linux/base_linux_allocation_tracer.cpp
+    base/platform/linux/base_linux_allocation_tracer.h
     base/platform/linux/base_linux_dbus_utilities.cpp
     base/platform/linux/base_linux_dbus_utilities.h
     base/platform/linux/base_linux_glibmm_helper.h
     base/platform/linux/base_linux_gtk_integration_p.h
+    base/platform/linux/base_linux_gtk_integration_dummy.cpp
     base/platform/linux/base_linux_gtk_integration.cpp
     base/platform/linux/base_linux_gtk_integration.h
+    base/platform/linux/base_linux_library.cpp
+    base/platform/linux/base_linux_library.h
     base/platform/linux/base_linux_xcb_utilities.cpp
     base/platform/linux/base_linux_xcb_utilities.h
     base/platform/linux/base_linux_xdp_utilities.cpp
@@ -43,6 +48,8 @@ PRIVATE
     base/platform/linux/base_network_reachability_linux.h
     base/platform/linux/base_process_linux.cpp
     base/platform/linux/base_process_linux.h
+    base/platform/linux/base_system_media_controls_linux_dummy.cpp
+    base/platform/linux/base_system_media_controls_linux.cpp
     base/platform/linux/base_url_scheme_linux.cpp
     base/platform/linux/base_url_scheme_linux.h
     base/platform/mac/base_file_utilities_mac.h
@@ -58,6 +65,7 @@ PRIVATE
     base/platform/mac/base_network_reachability_mac.h
     base/platform/mac/base_process_mac.h
     base/platform/mac/base_process_mac.mm
+    base/platform/mac/base_system_media_controls_mac.mm
     base/platform/mac/base_url_scheme_mac.h
     base/platform/mac/base_url_scheme_mac.mm
     base/platform/mac/base_utilities_mac.h
@@ -75,13 +83,17 @@ PRIVATE
     base/platform/win/base_network_reachability_win.h
     base/platform/win/base_process_win.cpp
     base/platform/win/base_process_win.h
+    base/platform/win/base_system_media_controls_win.cpp
     base/platform/win/base_url_scheme_win.cpp
     base/platform/win/base_url_scheme_win.h
     base/platform/win/base_windows_h.h
-    base/platform/win/base_windows_wrl.cpp
-    base/platform/win/base_windows_wrl.h
     base/platform/win/base_windows_safe_library.cpp
     base/platform/win/base_windows_safe_library.h
+    base/platform/win/base_windows_winrt.cpp
+    base/platform/win/base_windows_winrt.h
+    base/platform/win/base_windows_wrl.cpp
+    base/platform/win/base_windows_wrl.h
+    base/platform/win/wrl/wrl_event_h.h
     base/platform/win/wrl/wrl_implements_h.h
     base/platform/base_platform_global_shortcuts.h
     base/platform/base_platform_info.cpp
@@ -93,6 +105,7 @@ PRIVATE
     base/platform/base_platform_file_utilities.h
     base/platform/base_platform_process.h
     base/platform/base_platform_url_scheme.h
+    base/platform/base_platform_system_media_controls.h
     base/algorithm.h
     base/assertion.cpp
     base/assertion.h
@@ -179,6 +192,11 @@ if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
         base/platform/linux/base_linux_dbus_utilities.h
         base/platform/linux/base_linux_xdp_utilities.cpp
         base/platform/linux/base_linux_xdp_utilities.h
+        base/platform/linux/base_system_media_controls_linux.cpp
+    )
+else()
+    remove_target_sources(lib_base ${src_loc}
+        base/platform/linux/base_system_media_controls_linux_dummy.cpp
     )
 endif()
 
@@ -198,9 +216,8 @@ if (DESKTOP_APP_DISABLE_GTK_INTEGRATION)
         base/platform/linux/base_linux_xlib_helper.cpp
         base/platform/linux/base_linux_xlib_helper.h
     )
-
-    nice_target_sources(lib_base ${src_loc}
-    PRIVATE
+else()
+    remove_target_sources(lib_base ${src_loc}
         base/platform/linux/base_linux_gtk_integration_dummy.cpp
     )
 endif()
@@ -222,7 +239,9 @@ PUBLIC
     desktop-app::external_expected
 )
 
-if (LINUX)
+if (WIN32)
+    nuget_add_winrt(lib_base)
+elseif (LINUX)
     target_link_libraries(lib_base
     PUBLIC
         desktop-app::external_glibmm
@@ -251,7 +270,7 @@ if (LINUX)
                 target_link_libraries(lib_base PUBLIC PkgConfig::X11)
             endif()
         else()
-            pkg_search_module(GTK REQUIRED gtk+-3.0 gtk+-2.0)
+            pkg_check_modules(GTK REQUIRED gtk+-3.0)
             target_include_directories(lib_base PUBLIC ${GTK_INCLUDE_DIRS})
 
             if (NOT DESKTOP_APP_DISABLE_X11_INTEGRATION)
@@ -261,7 +280,16 @@ if (LINUX)
     endif()
 endif()
 
-target_compile_definitions(lib_base PRIVATE G_LOG_DOMAIN="lib_base")
+target_compile_definitions(lib_base
+PRIVATE
+    G_LOG_DOMAIN="lib_base"
+)
+if (DESKTOP_APP_USE_ALLOCATION_TRACER)
+    target_compile_definitions(lib_base
+    PRIVATE
+        DESKTOP_APP_USE_ALLOCATION_TRACER
+    )
+endif()
 
 #target_precompile_headers(lib_base_crash_report_writer REUSE_FROM lib_base)
 target_precompile_headers(lib_base_crash_report_writer PRIVATE ${src_loc}/base/base_pch.h)
