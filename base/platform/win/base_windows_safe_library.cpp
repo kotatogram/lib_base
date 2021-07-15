@@ -6,43 +6,98 @@
 //
 #include "base/platform/win/base_windows_safe_library.h"
 
-#include "base/flat_map.h"
+#include <string>
+#include <array>
+
+#define LOAD_SYMBOL(lib, name) ::base::Platform::LoadMethod(lib, #name, name)
 
 namespace base {
 namespace Platform {
+namespace {
 
-HINSTANCE SafeLoadLibrary(const QString &name) {
-	static auto Loaded = base::flat_map<QString, HINSTANCE>();
-	static const auto SystemPath = [] {
-		WCHAR buffer[MAX_PATH + 1] = { 0 };
-		return GetSystemDirectory(buffer, MAX_PATH)
-			? QString::fromWCharArray(buffer)
-			: QString();
-	}();
-	static const auto WindowsPath = [] {
-		WCHAR buffer[MAX_PATH + 1] = { 0 };
-		return GetWindowsDirectory(buffer, MAX_PATH)
-			? QString::fromWCharArray(buffer)
-			: QString();
-	}();
-	const auto tryPath = [&](const QString &path) {
-		if (!path.isEmpty()) {
-			const auto full = (path + '\\' + name).toStdWString();
-			if (const auto result = HINSTANCE(LoadLibrary(full.c_str()))) {
-				Loaded.emplace(name, result);
-				return result;
-			}
-		}
-		return HINSTANCE(nullptr);
-	};
-	if (const auto i = Loaded.find(name); i != Loaded.end()) {
-		return i->second;
-	} else if (const auto result1 = tryPath(SystemPath)) {
-		return result1;
-	} else if (const auto result2 = tryPath(WindowsPath)) {
-		return result2;
+constexpr auto kMaxPathLong = 32767;
+
+__declspec(noreturn) void FatalError(
+		const std::wstring &text,
+		DWORD error = 0) {
+	const auto lastError = error ? error : GetLastError();
+	const auto full = lastError
+		? (text + L"\n\nError Code: " + std::to_wstring(lastError))
+		: text;
+	MessageBox(nullptr, full.c_str(), L"Fatal Error", MB_ICONERROR);
+	std::abort();
+}
+
+void CheckDynamicLibraries() {
+	auto exePath = std::array<WCHAR, kMaxPathLong + 1>{ 0 };
+	const auto exeLength = GetModuleFileName(
+		nullptr,
+		exePath.data(),
+		kMaxPathLong + 1);
+	if (!exeLength || exeLength >= kMaxPathLong + 1) {
+		FatalError(L"Could not get executable path!");
 	}
-	Loaded.emplace(name);
+	const auto exe = std::wstring(exePath.data());
+	const auto last1 = exe.find_last_of('\\');
+	const auto last2 = exe.find_last_of('/');
+	const auto last = std::max(
+		(last1 == std::wstring::npos) ? -1 : int(last1),
+		(last2 == std::wstring::npos) ? -1 : int(last2));
+	if (last < 0) {
+		FatalError(L"Could not get executable directory!");
+	}
+	const auto search = exe.substr(0, last + 1) + L"*.dll";
+
+	auto findData = WIN32_FIND_DATA();
+	const auto findHandle = FindFirstFile(search.c_str(), &findData);
+	if (findHandle == INVALID_HANDLE_VALUE) {
+		const auto error = GetLastError();
+		if (error != ERROR_FILE_NOT_FOUND) {
+			FatalError(L"Could not enumerate executable path!", error);
+		}
+	}
+
+	do {
+		if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+			continue;
+		}
+		const auto me = exe.substr(last + 1);
+		FatalError(L"Unknown DLL library \"\
+" + std::wstring(findData.cFileName) + L"\" found \
+in the directory with " + me + L".\n\n\
+This may be a virus or a malicious program. \n\n\
+Please remove all DLL libraries from this directory:\n\n\
+" + exe.substr(0, last) + L"\n\n\
+Alternatively, you can move " + me + L" to a new directory.");
+	} while (FindNextFile(findHandle, &findData));
+}
+
+BOOL (__stdcall *SetDefaultDllDirectories)(_In_ DWORD DirectoryFlags);
+
+} // namespace
+
+void InitDynamicLibraries() {
+	static const auto Inited = [] {
+		const auto kernel = LoadLibrary(L"kernel32.dll");
+		if (LOAD_SYMBOL(kernel, SetDefaultDllDirectories)) {
+			SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+		} else {
+			CheckDynamicLibraries();
+		}
+		return true;
+	}();
+}
+
+HINSTANCE SafeLoadLibrary(LPCWSTR name, bool required) {
+	InitDynamicLibraries();
+
+	if (const auto result = HINSTANCE(LoadLibrary(name))) {
+		return result;
+	} else if (required) {
+		FatalError(L"Could not load required DLL '"
+			+ std::wstring(name)
+			+ L"'!");
+	}
 	return nullptr;
 }
 

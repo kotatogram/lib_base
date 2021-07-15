@@ -24,9 +24,7 @@ namespace {
 
 using Metadata = std::map<Glib::ustring, Glib::VariantBase>;
 
-constexpr auto kService = "org.mpris.MediaPlayer2.Kotatogram"_cs;
-constexpr auto kFakeTrackPath = "/org/kotatogram/desktop/track/0"_cs;
-// constexpr auto kInterface = "org.mpris.MediaPlayer2"_cs;
+constexpr auto kFakeTrackPath = "/org/desktop_app/track/0"_cs;
 
 constexpr auto kIntrospectionXML = R"INTROSPECTION(<node>
 	<interface name='org.mpris.MediaPlayer2'>
@@ -146,6 +144,7 @@ public:
 		bool canGoNext = false;
 		bool canGoPrevious = false;
 
+		Glib::ustring serviceName;
 		Glib::ustring applicationName;
 	};
 
@@ -195,12 +194,12 @@ public:
 
 private:
 	const Gio::DBus::InterfaceVTable _interfaceVTable;
-	const std::string _objectPath;
+	const Glib::ustring _objectPath;
 	const Glib::ustring _playerInterface;
-	const std::string _propertiesInterface;
+	const Glib::ustring _propertiesInterface;
 
-	const std::string _signalPropertyChangedName;
-	const std::string _signalSeekedName;
+	const Glib::ustring _signalPropertyChangedName;
+	const Glib::ustring _signalSeekedName;
 
 	Glib::RefPtr<Gio::DBus::Connection> _dbusConnection;
 
@@ -258,7 +257,7 @@ bool SystemMediaControls::Private::init() {
 	Noexcept([&] {
 		_dbus.ownId = Gio::DBus::own_name(
 			Gio::DBus::BusType::BUS_TYPE_SESSION,
-			std::string(kService));
+			_player.serviceName);
 	});
 	if (!_dbus.ownId) {
 		return false;
@@ -498,6 +497,10 @@ bool SystemMediaControls::init(std::optional<QWidget*> parent) {
 	clearMetadata();
 
 	return _private->dbusAvailable();
+}
+
+void SystemMediaControls::setServiceName(const QString &name) {
+	_private->player().serviceName = name.toStdString();
 }
 
 void SystemMediaControls::setApplicationName(const QString &name) {

@@ -9,17 +9,23 @@
 namespace base {
 namespace Platform {
 
+class GtkIntegration::Private {
+};
+
 GtkIntegration::GtkIntegration() {
 }
+
+GtkIntegration::~GtkIntegration() = default;
 
 GtkIntegration *GtkIntegration::Instance() {
 	return nullptr;
 }
 
-void GtkIntegration::prepareEnvironment() {
+void GtkIntegration::load(const QString &allowedBackends, bool force) {
 }
 
-void GtkIntegration::load() {
+int GtkIntegration::exec(const QString &parentDBusName) {
+	return 1;
 }
 
 void GtkIntegration::initializeSettings() {
@@ -27,6 +33,13 @@ void GtkIntegration::initializeSettings() {
 
 bool GtkIntegration::loaded() const {
 	return false;
+}
+
+QString GtkIntegration::ServiceName() {
+	return QString();
+}
+
+void GtkIntegration::SetServiceName(const QString &serviceName) {
 }
 
 bool GtkIntegration::checkVersion(uint major, uint minor, uint micro) const {
@@ -50,7 +63,7 @@ std::optional<QString> GtkIntegration::getStringSetting(
 
 void GtkIntegration::connectToSetting(
 		const QString &propertyName,
-		void (*callback)()) {
+		Fn<void()> callback) {
 }
 
 } // namespace Platform

@@ -7,15 +7,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "base/const_string.h"
+#include "base/basic_types.h"
 
 #include <QtCore/QLibrary>
 #include <optional>
+#include <memory>
 
 namespace base {
 namespace Platform {
-
-inline constexpr auto kIgnoreGtkIncompatibility = "DESKTOP_APP_I_KNOW_ABOUT_GTK_INCOMPATIBILITY"_cs;
 
 class GtkIntegration {
 public:
@@ -25,10 +24,13 @@ public:
 		return _lib;
 	}
 
-	void prepareEnvironment();
-	void load();
+	void load(const QString &allowedBackends, bool force = false);
+	int exec(const QString &parentDBusName);
 	void initializeSettings();
 	[[nodiscard]] bool loaded() const;
+
+	[[nodiscard]] static QString ServiceName();
+	static void SetServiceName(const QString &serviceName);
 
 	[[nodiscard]] bool checkVersion(
 		uint major,
@@ -46,10 +48,15 @@ public:
 
 	void connectToSetting(
 		const QString &propertyName,
-		void (*callback)());
+		Fn<void()> callback);
 
 private:
 	GtkIntegration();
+	~GtkIntegration();
+
+	class Private;
+	const std::unique_ptr<Private> _private;
+
 	QLibrary _lib;
 };
 
