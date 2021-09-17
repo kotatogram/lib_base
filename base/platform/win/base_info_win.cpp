@@ -9,6 +9,7 @@
 #include "base/platform/base_platform_info.h"
 #include "base/platform/win/base_windows_h.h"
 
+#include <QtCore/QOperatingSystemVersion>
 #include <QtCore/QJsonObject>
 #include <QtCore/QDate>
 
@@ -17,16 +18,10 @@
 namespace Platform {
 
 QDate WhenSystemBecomesOutdated() {
-	if (!IsWindows7OrGreater()) {
-		return QDate(2019, 9, 1);
-	}
 	return QDate();
 }
 
 int AutoUpdateVersion() {
-	if (!IsWindows7OrGreater()) {
-		return 1;
-	}
 	return 2;
 }
 
@@ -36,16 +31,6 @@ QString AutoUpdateKey() {
 	} else {
 		return "win";
 	}
-}
-
-bool IsWindowsXPOrGreater() {
-	static const auto result = ::IsWindowsXPOrGreater();
-	return result;
-}
-
-bool IsWindowsVistaOrGreater() {
-	static const auto result = ::IsWindowsVistaOrGreater();
-	return result;
 }
 
 bool IsWindows7OrGreater() {
@@ -65,6 +50,18 @@ bool IsWindows8Point1OrGreater() {
 
 bool IsWindows10OrGreater() {
 	static const auto result = ::IsWindows10OrGreater();
+	return result;
+}
+
+bool IsWindows11OrGreater() {
+	static const auto result = [&] {
+		if (!IsWindows10OrGreater()) {
+			return false;
+		}
+		const auto version = QOperatingSystemVersion::current();
+		return (version.majorVersion() > 10)
+			|| (version.microVersion() >= 22000);
+	}();
 	return result;
 }
 

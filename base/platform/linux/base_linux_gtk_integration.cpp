@@ -96,92 +96,6 @@ std::optional<T> GtkSetting(const QString &propertyName) {
 	return value;
 }
 
-bool IconThemeShouldBeSet() {
-	// change the icon theme only if
-	// it isn't already set by a platformtheme plugin
-	static const auto Result =
-		// QGenericUnixTheme
-		(QIcon::themeName() == qstr("hicolor")
-			&& QIcon::fallbackThemeName() == qstr("hicolor"))
-		// QGnomeTheme
-		|| (QIcon::themeName() == qstr("Adwaita")
-			&& QIcon::fallbackThemeName() == qstr("gnome"))
-		// qt5ct
-		|| (QIcon::themeName().isEmpty()
-			&& QIcon::fallbackThemeName().isEmpty());
-
-	return Result;
-}
-
-bool CursorSizeShouldBeSet() {
-	// change the cursor size only on Wayland and if it wasn't already set
-	static const auto Result = ::Platform::IsWayland()
-		&& qEnvironmentVariableIsEmpty("XCURSOR_SIZE");
-
-	return Result;
-}
-
-void SetIconTheme() {
-	static const auto setter = [] {
-		const auto integration = GtkIntegration::Instance();
-		if (!integration || !IconThemeShouldBeSet()) {
-			return;
-		}
-
-		const auto themeName = integration->getStringSetting(
-			"gtk-icon-theme-name");
-
-		const auto fallbackThemeName = integration->getStringSetting(
-			"gtk-fallback-icon-theme");
-
-		if (!themeName.has_value() || !fallbackThemeName.has_value()) {
-			return;
-		}
-
-		DEBUG_LOG(("Setting GTK icon theme"));
-
-		QIcon::setThemeName(*themeName);
-		QIcon::setFallbackThemeName(*fallbackThemeName);
-
-		DEBUG_LOG(("New icon theme: %1").arg(QIcon::themeName()));
-
-		DEBUG_LOG(("New fallback icon theme: %1")
-			.arg(QIcon::fallbackThemeName()));
-	};
-
-	if (QCoreApplication::instance()) {
-		Integration::Instance().enterFromEventLoop(setter);
-	} else {
-		setter();
-	}
-}
-
-void SetCursorSize() {
-	static const auto setter = [] {
-		const auto integration = GtkIntegration::Instance();
-		if (!integration || !CursorSizeShouldBeSet()) {
-			return;
-		}
-
-		const auto newCursorSize = integration->getIntSetting(
-			"gtk-cursor-theme-size");
-
-		if (!newCursorSize.has_value()) {
-			return;
-		}
-
-		DEBUG_LOG(("Setting GTK cursor size"));
-		qputenv("XCURSOR_SIZE", QByteArray::number(*newCursorSize));
-		DEBUG_LOG(("New cursor size: %1").arg(*newCursorSize));
-	};
-
-	if (QCoreApplication::instance()) {
-		Integration::Instance().enterFromEventLoop(setter);
-	} else {
-		setter();
-	}
-}
-
 } // namespace
 
 class GtkIntegration::Private {
@@ -242,18 +156,14 @@ bool GtkIntegration::Private::setupBase(
 		// Otherwise we get segfault in Ubuntu 17.04 in gtk_init_check() call.
 		// See https://github.com/telegramdesktop/tdesktop/issues/3176
 		// See https://github.com/telegramdesktop/tdesktop/issues/3162
-		DEBUG_LOG(("Limit allowed GDK backends to '%1'").arg(allowedBackends));
 		gdk_set_allowed_backends(allowedBackends.toUtf8().constData());
 	}
 
-	DEBUG_LOG(("Library gtk functions loaded!"));
 	triedToInit = true;
 	if (!gtk_init_check(0, 0)) {
 		gtk_init_check = nullptr;
-		DEBUG_LOG(("Failed to gtk_init_check(0, 0)!"));
 		return false;
 	}
-	DEBUG_LOG(("Checked gtk with gtk_init_check!"));
 
 	// Use our custom log handler.
 	g_log_set_handler("Gtk", G_LOG_LEVEL_MESSAGE, GtkMessageHandler, nullptr);
@@ -476,10 +386,6 @@ void GtkIntegration::load(const QString &allowedBackends, bool force) {
 		return;
 	}
 
-	DEBUG_LOG(("Loading GTK"));
-	DEBUG_LOG(("Icon theme: %1").arg(QIcon::themeName()));
-	DEBUG_LOG(("Fallback icon theme: %1").arg(QIcon::fallbackThemeName()));
-
 	if (LoadGtkLibrary(_lib, "gtk-3", 0)) {
 		_private->loaded = _private->setupBase(_lib, allowedBackends);
 	}
@@ -492,8 +398,6 @@ void GtkIntegration::load(const QString &allowedBackends, bool force) {
 	if (_private->loaded) {
 		LOAD_GTK_SYMBOL(_lib, gtk_check_version);
 		LOAD_GTK_SYMBOL(_lib, gtk_settings_get_default);
-	} else {
-		LOG(("Could not load gtk-3 or gtk-x11-2.0!"));
 	}
 }
 
@@ -524,17 +428,6 @@ int GtkIntegration::exec(const QString &parentDBusName) {
 			app->quit();
 		});
 	return app->run(0, nullptr);
-}
-
-void GtkIntegration::initializeSettings() {
-	if (!loaded()) {
-		return;
-	}
-
-	SetIconTheme();
-	SetCursorSize();
-	connectToSetting("gtk-icon-theme-name", SetIconTheme);
-	connectToSetting("gtk-cursor-theme-size", SetCursorSize);
 }
 
 bool GtkIntegration::loaded() const {
@@ -621,7 +514,13 @@ std::optional<bool> GtkIntegration::getBoolSetting(
 				}),
 				ServiceNameVar);
 
-			return GlibVariantCast<bool>(reply.get_child(0));
+			const auto value = GlibVariantCast<bool>(reply.get_child(0));
+
+			DEBUG_LOG(("Getting GTK setting, %1: %2").arg(
+				propertyName,
+				value ? "[TRUE]" : "[FALSE]"));
+
+			return value;
 		} catch (...) {
 		}
 
@@ -632,9 +531,6 @@ std::optional<bool> GtkIntegration::getBoolSetting(
 	if (!value.has_value()) {
 		return std::nullopt;
 	}
-	DEBUG_LOG(("Getting GTK setting, %1: %2").arg(
-		propertyName,
-		*value ? "[TRUE]" : "[FALSE]"));
 	return *value;
 }
 
@@ -655,20 +551,20 @@ std::optional<int> GtkIntegration::getIntSetting(
 				}),
 				ServiceNameVar);
 
-			return GlibVariantCast<int>(reply.get_child(0));
+			const auto value = GlibVariantCast<int>(reply.get_child(0));
+
+			DEBUG_LOG(("Getting GTK setting, %1: %2")
+				.arg(propertyName)
+				.arg(value));
+
+			return value;
 		} catch (...) {
 		}
 
 		return std::nullopt;
 	}
 
-	const auto value = GtkSetting<gint>(propertyName);
-	if (value.has_value()) {
-		DEBUG_LOG(("Getting GTK setting, %1: %2")
-			.arg(propertyName)
-			.arg(*value));
-	}
-	return value;
+	return GtkSetting<gint>(propertyName);
 }
 
 std::optional<QString> GtkIntegration::getStringSetting(
@@ -688,22 +584,30 @@ std::optional<QString> GtkIntegration::getStringSetting(
 				}),
 				ServiceNameVar);
 
-			return QString::fromStdString(
+			const auto value = QString::fromStdString(
 				GlibVariantCast<Glib::ustring>(reply.get_child(0)));
+
+			DEBUG_LOG(("Getting GTK setting, %1: '%2'").arg(
+				propertyName,
+				value));
+
+			return value;
 		} catch (...) {
 		}
 
 		return std::nullopt;
 	}
 
-	auto value = GtkSetting<gchararray>(propertyName);
+	const auto value = GtkSetting<gchararray>(propertyName);
 	if (!value.has_value()) {
 		return std::nullopt;
 	}
-	const auto str = QString::fromUtf8(*value);
-	g_free(*value);
-	DEBUG_LOG(("Getting GTK setting, %1: '%2'").arg(propertyName, str));
-	return str;
+
+	const auto guard = gsl::finally([&] {
+		g_free(*value);
+	});
+
+	return QString::fromUtf8(*value);
 }
 
 void GtkIntegration::connectToSetting(
