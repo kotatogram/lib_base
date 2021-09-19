@@ -32,16 +32,14 @@ PRIVATE
     base/platform/linux/base_linux_dbus_utilities.cpp
     base/platform/linux/base_linux_dbus_utilities.h
     base/platform/linux/base_linux_glibmm_helper.h
-    base/platform/linux/base_linux_gtk_integration_p.h
-    base/platform/linux/base_linux_gtk_integration_dummy.cpp
-    base/platform/linux/base_linux_gtk_integration.cpp
-    base/platform/linux/base_linux_gtk_integration.h
     base/platform/linux/base_linux_library.cpp
     base/platform/linux/base_linux_library.h
     base/platform/linux/base_linux_xcb_utilities.cpp
     base/platform/linux/base_linux_xcb_utilities.h
     base/platform/linux/base_linux_xdp_utilities.cpp
     base/platform/linux/base_linux_xdp_utilities.h
+    base/platform/linux/base_linux_xsettings.cpp
+    base/platform/linux/base_linux_xsettings.h
     base/platform/linux/base_network_reachability_linux.cpp
     base/platform/linux/base_network_reachability_linux.h
     base/platform/linux/base_process_linux.cpp
@@ -160,6 +158,8 @@ PRIVATE
     base/qthelp_url.h
     base/qt_connection.h
     base/qt_signal_producer.h
+    base/random.cpp
+    base/random.h
     base/required.h
     base/runtime_composer.cpp
     base/runtime_composer.h
@@ -188,6 +188,7 @@ if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
     remove_target_sources(lib_base ${src_loc}
         base/platform/linux/base_linux_dbus_utilities.cpp
         base/platform/linux/base_linux_dbus_utilities.h
+        base/platform/linux/base_linux_glibmm_helper.h
         base/platform/linux/base_linux_xdp_utilities.cpp
         base/platform/linux/base_linux_xdp_utilities.h
         base/platform/linux/base_system_media_controls_linux.cpp
@@ -202,17 +203,8 @@ if (DESKTOP_APP_DISABLE_X11_INTEGRATION)
     remove_target_sources(lib_base ${src_loc}
         base/platform/linux/base_linux_xcb_utilities.cpp
         base/platform/linux/base_linux_xcb_utilities.h
-    )
-endif()
-
-if (DESKTOP_APP_DISABLE_GTK_INTEGRATION)
-    remove_target_sources(lib_base ${src_loc}
-        base/platform/linux/base_linux_gtk_integration_p.h
-        base/platform/linux/base_linux_gtk_integration.cpp
-    )
-else()
-    remove_target_sources(lib_base ${src_loc}
-        base/platform/linux/base_linux_gtk_integration_dummy.cpp
+        base/platform/linux/base_linux_xsettings.cpp
+        base/platform/linux/base_linux_xsettings.h
     )
 endif()
 
@@ -236,11 +228,13 @@ PUBLIC
 if (WIN32)
     nuget_add_winrt(lib_base)
 elseif (LINUX)
-    target_link_libraries(lib_base
-    PUBLIC
-        desktop-app::external_glibmm
-        desktop-app::external_glib
-    )
+    if (NOT DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
+        target_link_libraries(lib_base
+        PUBLIC
+            desktop-app::external_glibmm
+            desktop-app::external_glib
+        )
+    endif()
 
     if (NOT DESKTOP_APP_DISABLE_X11_INTEGRATION)
         target_link_libraries(lib_base
@@ -250,13 +244,6 @@ elseif (LINUX)
             desktop-app::external_xcb_screensaver
             desktop-app::external_xcb
         )
-    endif()
-
-    if (NOT DESKTOP_APP_DISABLE_GTK_INTEGRATION)
-        find_package(PkgConfig REQUIRED)
-
-        pkg_check_modules(GTK REQUIRED gtk+-3.0)
-        target_include_directories(lib_base SYSTEM PUBLIC ${GTK_INCLUDE_DIRS})
     endif()
 endif()
 
